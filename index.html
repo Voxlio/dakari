@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Dakari — Real-Time Frequency Chat</title>
+    <link rel="icon" type="image/png" href="https://i.ibb.co/qLgqgGCq/zikora.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=Lexend+Exa:wght@300;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080808;
+            --accent-lime: #95F651;
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --border-color: rgba(255, 255, 255, 0.08);
+        }
+        body { 
+            background-color: var(--bg-color); 
+            color: white; 
+            font-family: 'Manrope', sans-serif; 
+            scroll-behavior: smooth; 
+            overflow-x: hidden;
+            height: 100dvh;
+        }
+        .font-exa { font-family: 'Lexend+Exa', sans-serif; }
+        
+        /* Custom Animations */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-msg { animation: slideIn 0.3s ease forwards; }
+
+        /* UI Components */
+        .orb-button { border: 1px solid var(--border-color); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .orb-button:hover { background-color: white; color: black; transform: translateY(-1px); }
+        
+        .accent-button { background-color: var(--accent-lime); color: black; transition: all 0.3s ease; }
+        .accent-button:hover { transform: scale(1.02); box-shadow: 0 0 25px rgba(149, 246, 81, 0.3); }
+
+        .status-dot { width: 8px; height: 8px; background-color: #71717a; border-radius: 50%; position: relative; transition: background-color 0.5s ease; }
+        .status-dot.active { background-color: var(--accent-lime); }
+        .status-dot.active::after { content: ''; position: absolute; inset: -4px; border: 1px solid var(--accent-lime); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }
+
+        .text-gradient { background: linear-gradient(180deg, #FFFFFF 0%, #777 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        /* Chat Bubbles */
+        .msg-bubble {
+            max-width: 85%;
+            padding: 12px 18px;
+            border-radius: 20px;
+            position: relative;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .msg-received { background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .msg-sent { background: var(--accent-lime); color: black; align-self: flex-end; border-bottom-right-radius: 4px; }
+
+        /* Typing Animation */
+        .typing-indicator { display: flex; gap: 3px; padding: 4px 8px; }
+        .typing-dot { width: 4px; height: 4px; background: var(--accent-lime); border-radius: 50%; animation: typing 1.4s infinite; opacity: 0.4; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); opacity: 1; } }
+
+        /* Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+
+        /* Inputs */
+        input { background: rgba(255, 255, 255, 0.03) !important; border: 1px solid var(--border-color) !important; color: white !important; }
+        input:focus { border-color: var(--accent-lime) !important; outline: none; }
+
+        /* Overlay */
+        .glass-overlay {
+            backdrop-filter: blur(12px);
+            background: rgba(8, 8, 8, 0.85);
+        }
+    </style>
+</head>
+<body class="antialiased overflow-hidden">
+
+    <!-- Username Selection Overlay -->
+    <div id="username-overlay" class="fixed inset-0 z-[100] glass-overlay flex items-center justify-center p-6 hidden">
+        <div class="max-w-sm w-full space-y-8 text-center">
+            <div class="space-y-2">
+                <h2 class="text-3xl font-bold tracking-tighter">Identify Yourself</h2>
+                <p class="text-white/40 text-sm">Choose a frequency alias to continue.</p>
+            </div>
+            <div class="relative">
+                <input id="nickname-input" type="text" placeholder="ALIAS_NAME" maxlength="15"
+                    class="w-full px-8 py-5 rounded-full text-center font-exa tracking-widest text-sm uppercase">
+                <button onclick="window.saveNickname()" class="mt-6 accent-button w-full py-4 rounded-full font-bold uppercase text-[10px] tracking-widest">
+                    Engage Protocol
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 w-full z-50 px-6 py-5 border-b border-white/[0.05] bg-[#080808]/80 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto flex justify-between items-center gap-4">
+            <div class="flex items-center gap-6 shrink-0">
+                <a href="#" class="text-xl sm:text-2xl font-bold tracking-tighter hover:text-[#95F651] transition-colors">.dakari</a>
+                <div class="hidden md:flex items-center gap-3 border-l border-white/10 pl-6">
+                    <div id="auth-status" class="status-dot"></div>
+                    <span class="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold">Encrypted Link</span>
+                </div>
+            </div>
+            
+            <div id="room-controls" class="flex items-center gap-2 sm:gap-4 flex-1 justify-end">
+                <button onclick="window.createRoom()" class="orb-button px-4 py-2 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shrink-0">Auto-Generate</button>
+                <div class="relative group hidden sm:flex items-center">
+                    <input id="join-code-input" type="text" placeholder="CODE" class="px-4 py-2 rounded-full text-[10px] font-exa tracking-widest w-24 sm:w-32 transition-all focus:w-40">
+                    <button onclick="window.joinRoom()" class="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-[#95F651]">
+                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="active-room-header" class="hidden flex items-center gap-4 sm:gap-6">
+                <div class="flex flex-col items-end">
+                    <span class="text-[9px] text-white/40 uppercase tracking-[0.2em]">Frequency</span>
+                    <span id="display-room-code" class="font-exa text-xs sm:text-sm tracking-widest text-[#95F651]"></span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="window.leaveRoom()" class="p-2 border border-white/10 rounded-full hover:bg-red-500 hover:text-white transition-all">
+                        <i data-lucide="power" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="h-full flex flex-col pt-24">
+        <!-- Lobby State -->
+        <section id="lobby" class="flex-1 flex flex-col items-center justify-center py-12 px-6 text-center space-y-12 overflow-y-auto">
+            <div class="space-y-6">
+                <div class="flex justify-center"><div class="status-dot active"></div></div>
+                <h1 class="text-5xl md:text-8xl font-medium leading-[1.1] tracking-tight">Zero-friction <br> <span class="text-gradient">chat protocol</span></h1>
+                <p class="text-white/40 max-w-lg mx-auto text-sm leading-relaxed">No accounts. No logs. Just frequencies.</p>
+            </div>
+            
+            <div class="flex flex-col items-center gap-8 w-full max-w-sm mx-auto">
+                <button onclick="window.createRoom()" class="accent-button w-full px-10 py-5 rounded-full font-bold uppercase text-xs tracking-widest">
+                    Initialize Frequency
+                </button>
+                
+                <div class="flex flex-col gap-4 w-full">
+                    <div class="flex items-center gap-2">
+                        <div class="h-[1px] bg-white/10 flex-1"></div>
+                        <span class="text-[9px] uppercase tracking-[0.3em] text-white/20">reconnect</span>
+                        <div class="h-[1px] bg-white/10 flex-1"></div>
+                    </div>
+                    
+                    <div class="relative group">
+                        <input id="lobby-join-input" type="text" placeholder="ENTER FREQUENCY CODE" 
+                            class="w-full px-8 py-5 rounded-full text-center font-exa tracking-widest text-sm transition-all border-white/10">
+                        <button onclick="window.joinRoom(document.getElementById('lobby-join-input').value)" 
+                            class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full orb-button flex items-center justify-center">
+                            <i data-lucide="zap" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Chat Room State -->
+        <section id="chat-dashboard" class="hidden flex-1 flex flex-col h-full max-w-5xl mx-auto w-full relative">
+            <!-- Online Users Bar -->
+            <div id="online-users-bar" class="px-6 py-3 border-b border-white/5 flex items-center gap-3 overflow-x-auto custom-scrollbar">
+                <span class="text-[9px] uppercase tracking-widest text-white/20 shrink-0">Engaged:</span>
+                <div id="online-list" class="flex gap-2"></div>
+            </div>
+
+            <!-- Message List -->
+            <div id="message-container" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar flex flex-col">
+                <div class="py-20 text-center space-y-4">
+                    <div class="w-10 h-10 border border-white/10 rounded-full flex items-center justify-center mx-auto opacity-20">
+                        <i data-lucide="lock" class="w-4 h-4"></i>
+                    </div>
+                    <p class="uppercase tracking-[0.4em] text-[9px] text-white/20">Frequency Secure</p>
+                </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div id="typing-status" class="px-8 h-6 flex items-center gap-2 text-[10px] text-white/40 italic font-medium transition-opacity opacity-0">
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+                <span id="typing-text">someone is typing</span>
+            </div>
+
+            <!-- Message Input -->
+            <div class="p-6 bg-[#080808]">
+                <form id="chat-form" class="relative group" onsubmit="window.sendMessage(event)">
+                    <input id="msg-input" type="text" placeholder="Type a message..." autocomplete="off"
+                        class="w-full px-8 py-5 rounded-full pr-16 text-sm">
+                    <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 accent-button rounded-full flex items-center justify-center">
+                        <i data-lucide="arrow-up" class="w-5 h-5"></i>
+                    </button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast-container" class="fixed bottom-24 right-6 sm:right-10 z-[100] flex flex-col gap-3"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { getFirestore, doc, collection, onSnapshot, query, orderBy, addDoc, setDoc, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBYgpxl4SDX121bwv9vrVGcDHWd0A2KaYY",
+            authDomain: "dakari-eca1a.firebaseapp.com",
+            projectId: "dakari-eca1a",
+            storageBucket: "dakari-eca1a.firebasestorage.app",
+            messagingSenderId: "294760021577",
+            appId: "1:294760021577:web:436dcfd7e898c6448bc998",
+            measurementId: "G-FNHX2H9DH0"
+        };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dakari-pro';
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let currentRoom = null;
+        let unsubscribeMessages = null;
+        let unsubscribePresence = null;
+        let unsubscribeTyping = null;
+        let heartbeatInterval = null;
+        let currentUser = null;
+        let nickname = localStorage.getItem('dakari_nick') || null;
+        let typingTimeout = null;
+
+        // Identity Management
+        window.saveNickname = () => {
+            const input = document.getElementById('nickname-input');
+            const val = input.value.trim().toUpperCase();
+            if (val.length < 2) return showToast("NAME_TOO_SHORT", "error");
+            nickname = val;
+            localStorage.setItem('dakari_nick', nickname);
+            document.getElementById('username-overlay').classList.add('hidden');
+            showToast(`GREETINGS_${nickname}`, "success");
+        };
+
+        async function initAuth() { 
+            try {
+                await signInAnonymously(auth);
+                if (!nickname) {
+                    document.getElementById('username-overlay').classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("CORE_SYNC_ERROR", "error");
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => { 
+            currentUser = user; 
+            document.getElementById('auth-status').classList.toggle('active', !!user);
+        });
+
+        // Navigation & Room Logic
+        window.createRoom = () => {
+            const code = Math.random().toString(36).substr(2, 6).toUpperCase();
+            window.joinRoom(code);
+        };
+
+        window.joinRoom = (code) => {
+            const rawCode = code || document.getElementById('join-code-input').value.trim();
+            if (!rawCode) return showToast("VOID_CODE", "error");
+            
+            if (!nickname) {
+                document.getElementById('username-overlay').classList.remove('hidden');
+                return;
+            }
+
+            currentRoom = rawCode.toUpperCase();
+            
+            document.getElementById('lobby').classList.add('hidden');
+            document.getElementById('chat-dashboard').classList.remove('hidden');
+            document.getElementById('active-room-header').classList.remove('hidden');
+            document.getElementById('room-controls').classList.add('hidden');
+            document.getElementById('display-room-code').innerText = currentRoom;
+            
+            startPresence();
+            listenToMessages();
+            listenToPresence();
+            listenToTyping();
+            setupTypingListener();
+            
+            showToast(`FREQUENCY_${currentRoom}_ENGAGED`, "success");
+        };
+
+        window.leaveRoom = async () => {
+            if (unsubscribeMessages) unsubscribeMessages();
+            if (unsubscribePresence) unsubscribePresence();
+            if (unsubscribeTyping) unsubscribeTyping();
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            
+            // Try to set presence to inactive before leaving
+            if (currentUser && currentRoom) {
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `presence_${currentRoom}`, currentUser.uid), {
+                        name: nickname,
+                        lastSeen: new Date(0) // Very old date
+                    }, { merge: true });
+                    
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `typing_${currentRoom}`, currentUser.uid), {
+                        name: nickname,
+                        isTyping: false
+                    }, { merge: true });
+                } catch (e) {}
+            }
+
+            currentRoom = null;
+            document.getElementById('lobby').classList.remove('hidden');
+            document.getElementById('chat-dashboard').classList.add('hidden');
+            document.getElementById('room-controls').classList.remove('hidden');
+            document.getElementById('active-room-header').classList.add('hidden');
+            document.getElementById('message-container').innerHTML = '';
+            document.getElementById('online-list').innerHTML = '';
+            showToast("SESSION_TERMINATED", "info");
+        };
+
+        // Presence Logic
+        async function startPresence() {
+            if (!currentUser || !currentRoom) return;
+            const updatePresence = async () => {
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `presence_${currentRoom}`, currentUser.uid), {
+                        name: nickname,
+                        lastSeen: serverTimestamp()
+                    }, { merge: true });
+                } catch (e) {}
+            };
+            
+            updatePresence();
+            heartbeatInterval = setInterval(updatePresence, 20000);
+        }
+
+        function listenToPresence() {
+            const q = collection(db, 'artifacts', appId, 'public', 'data', `presence_${currentRoom}`);
+            unsubscribePresence = onSnapshot(q, (snapshot) => {
+                const list = document.getElementById('online-list');
+                const users = snapshot.docs.map(d => d.data());
+                const now = Date.now();
+                
+                // Filter active users in JS (RULE 2)
+                const activeUsers = users.filter(u => {
+                    if (!u.lastSeen) return false;
+                    const lastSeenMs = u.lastSeen.seconds * 1000;
+                    return (now - lastSeenMs) < 60000; // Active within last minute
+                });
+
+                list.innerHTML = activeUsers.map(u => `
+                    <div class="flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/5 rounded-full">
+                        <div class="w-1.5 h-1.5 rounded-full bg-[#95F651]"></div>
+                        <span class="text-[9px] font-bold uppercase tracking-widest text-white/60">${u.name}</span>
+                    </div>
+                `).join('');
+            });
+        }
+
+        // Typing Logic
+        function setupTypingListener() {
+            const input = document.getElementById('msg-input');
+            input.addEventListener('input', () => {
+                if (!currentUser || !currentRoom) return;
+                
+                // Broadcast typing
+                setDoc(doc(db, 'artifacts', appId, 'public', 'data', `typing_${currentRoom}`, currentUser.uid), {
+                    name: nickname,
+                    isTyping: true,
+                    timestamp: serverTimestamp()
+                }, { merge: true });
+
+                if (typingTimeout) clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', `typing_${currentRoom}`, currentUser.uid), {
+                        isTyping: false
+                    }, { merge: true });
+                }, 3000);
+            });
+        }
+
+        function listenToTyping() {
+            const q = collection(db, 'artifacts', appId, 'public', 'data', `typing_${currentRoom}`);
+            unsubscribeTyping = onSnapshot(q, (snapshot) => {
+                const statusEl = document.getElementById('typing-status');
+                const textEl = document.getElementById('typing-text');
+                const typers = snapshot.docs
+                    .map(d => d.data())
+                    .filter(u => u.isTyping && u.name !== nickname);
+
+                if (typers.length > 0) {
+                    const names = typers.map(t => t.name).join(', ');
+                    textEl.innerText = `${names} ${typers.length > 1 ? 'are' : 'is'} typing`;
+                    statusEl.classList.remove('opacity-0');
+                } else {
+                    statusEl.classList.add('opacity-0');
+                }
+            });
+        }
+
+        // Real-time Chat
+        function listenToMessages() {
+            if (unsubscribeMessages) unsubscribeMessages();
+            const q = collection(db, 'artifacts', appId, 'public', 'data', `chat_${currentRoom}`);
+            
+            unsubscribeMessages = onSnapshot(q, (snapshot) => {
+                const container = document.getElementById('message-container');
+                const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                msgs.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+                
+                container.innerHTML = '';
+                if(msgs.length === 0) {
+                   container.innerHTML = `<div class="py-20 text-center opacity-10 uppercase tracking-widest text-xs">Void Detected</div>`;
+                }
+
+                msgs.forEach(msg => renderMessage(msg));
+                container.scrollTop = container.scrollHeight;
+                if (window.lucide) window.lucide.createIcons();
+            }, (err) => {
+                showToast("SYNC_LOST", "error");
+            });
+        }
+
+        function renderMessage(msg) {
+            const container = document.getElementById('message-container');
+            const isMe = msg.senderId === currentUser?.uid;
+            
+            const div = document.createElement('div');
+            div.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-msg`;
+            
+            const time = msg.createdAt ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
+            
+            div.innerHTML = `
+                ${!isMe ? `<span class="text-[9px] font-bold uppercase tracking-widest text-white/30 ml-2 mb-1">${msg.senderName}</span>` : ''}
+                <div class="msg-bubble ${isMe ? 'msg-sent' : 'msg-received'}">
+                    ${msg.text}
+                </div>
+                <span class="text-[8px] text-white/20 mt-1 mx-2 uppercase tracking-tighter">${time}</span>
+            `;
+            
+            container.appendChild(div);
+        }
+
+        window.sendMessage = async (e) => {
+            if (e) e.preventDefault();
+            const input = document.getElementById('msg-input');
+            const text = input.value.trim();
+            if (!text || !currentRoom || !currentUser) return;
+
+            input.value = '';
+            // Immediately clear typing indicator on send
+            setDoc(doc(db, 'artifacts', appId, 'public', 'data', `typing_${currentRoom}`, currentUser.uid), {
+                isTyping: false
+            }, { merge: true });
+
+            try {
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `chat_${currentRoom}`), {
+                    text,
+                    senderName: nickname,
+                    senderId: currentUser.uid,
+                    createdAt: serverTimestamp()
+                });
+            } catch (err) {
+                showToast("SEND_FAILURE", "error");
+            }
+        };
+
+        // UI Utils
+        function showToast(msg, type = "info") {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const styles = { success: "border-[#95F651] text-[#95F651]", error: "border-red-500 text-red-400", info: "border-white/20 text-white/60" };
+            toast.className = `px-6 py-4 rounded-full border bg-[#080808]/90 backdrop-blur-sm text-[10px] font-bold uppercase tracking-[0.2em] shadow-2xl transition-all duration-500 transform translate-x-full ${styles[type]}`;
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => toast.style.transform = "translateX(0)", 10);
+            setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 500); }, 3000);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => { 
+            initAuth();
+            if (window.lucide) window.lucide.createIcons();
+            
+            // Link detection
+            const urlParams = new URLSearchParams(window.location.search);
+            const r = urlParams.get('r');
+            if (r) setTimeout(() => window.joinRoom(r), 1000);
+        });
+    </script>
+</body>
+</html>
